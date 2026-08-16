@@ -123,6 +123,22 @@ describe('syncTools', () => {
     expect(ctx.tools.get('add')).toBeUndefined()
   })
 
+  it('skips a tool whose inputSchema is outside the supported subset and registers the rest', async () => {
+    const warns: string[] = []
+    ctx.logger.warn = ((message: unknown) => { warns.push(String(message)) }) as typeof ctx.logger.warn
+    const client = createMockClient([
+      { name: 'bad', inputSchema: { type: 'object', properties: { file: { type: 'MultipartFile' } } } },
+      { name: 'good', inputSchema: { type: 'object', properties: { q: { type: 'string' } } } },
+    ])
+
+    const disposers = await syncTools(client as never, ctx, defaultOpts, new Map())
+
+    expect(disposers.size).toBe(1)
+    expect(ctx.tools.get('mcp__srv__bad')).toBeUndefined()
+    expect(ctx.tools.get('mcp__srv__good')).toBeDefined()
+    expect(warns.some(line => line.includes('skipping tool "bad"'))).toBe(true)
+  })
+
   it('lets two servers publish the same raw name side by side', async () => {
     const clientA = createMockClient([{ name: 'search', inputSchema: { type: 'object' } }])
     const clientB = createMockClient([{ name: 'search', inputSchema: { type: 'object' } }])

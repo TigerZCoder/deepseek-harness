@@ -107,7 +107,10 @@ export function publicToolName(serverName: string, rawName: string): string {
  * Two phases keep the swap safe:
  *
  * 1. Fetch: drain uncached `tools/list` pagination and build the full next
- *    generation of `ToolDefinition`s under public names. Any failure here
+ *    generation of `ToolDefinition`s under public names. A tool whose
+ *    `inputSchema` falls outside the enforced JSON Schema subset is skipped
+ *    with a warn — the input-side mirror of the output-schema fallback — so
+ *    one malformed tool cannot break the whole server. Any other failure here
  *    (network error, duplicate raw name in the server's list) rejects and
  *    leaves the previous generation registered untouched.
  * 2. Swap: dispose the previous generation, register the new one. A registry
@@ -142,6 +145,10 @@ export async function syncTools(
         throw new Error(
           `mcp-client(${opts.serverName}): server listed tool "${tool.name}" more than once — invalid tool list`,
         )
+      }
+      if (!supportedInputSchema(tool.inputSchema)) {
+        ctx.logger.warn(`mcp-client(${opts.serverName}): skipping tool "${tool.name}" — inputSchema is outside the supported JSON Schema subset`)
+        continue
       }
       definitions.set(publicName, {
         name: publicName,
@@ -193,6 +200,21 @@ function supportedOutputSchema(candidate: unknown): JsonSchemaNode | undefined {
     return candidate
   } catch {
     return undefined
+  }
+}
+
+/**
+ * Accept a tool only when its advertised input schema stays inside the
+ * enforced subset. Unlike output, an input schema cannot degrade to an
+ * unconstrained shape — it is the argument contract the model calls with — so
+ * an unsupported schema skips the tool instead of registering a wrong one.
+ */
+function supportedInputSchema(candidate: unknown): boolean {
+  try {
+    assertSupportedJsonSchema(candidate)
+    return true
+  } catch {
+    return false
   }
 }
 
